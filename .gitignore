@@ -1,0 +1,13 @@
+Dados CNPJ Empresas
+Dados CNPJ Estab
+Entrada do Painel/
+Dados CTF IBAMA
+Dados Painel Parquet
+Entrada do Painel
+debug.log
+caminho_dados_parquet.txt
+executar_pipeline.bat
+Painel Consulta CTF R1.pbix
+__pycache__
+.DS_Store
+Testes.ipynb
