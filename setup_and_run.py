@@ -50,11 +50,13 @@ if __name__ == "__main__":
 
     # Criar pastas necessárias
     diretorios = [
-        "Dados CNPJ Estab",
-        "Dados CNPJ Empresas",
-        "Dados CTF IBAMA",
-        "Entrada do Painel",
-        "Dados Painel Parquet"
+    "Dados CNPJ Estab",
+    "Dados CNPJ Empresas",
+    "Dados CNAE",
+    "Dados Natureza Jurídica",
+    "Dados CTF IBAMA",
+    "Entrada do Painel",
+    "Dados Painel Parquet"
     ]
     criar_pastas(diretorios)
 

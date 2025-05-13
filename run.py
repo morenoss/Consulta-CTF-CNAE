@@ -1,6 +1,7 @@
 import os
 import time
 import threading
+from datetime import datetime
 from get_files_online import get_files_online, get_latest_cnpj_urls
 from transform_cnpj_estabelecimentos import transform_cnpj as transform_estab
 from transform_cnpj_empresas import transform_cnpj_empresas
@@ -9,12 +10,17 @@ from transform_natureza_juridica import transform_naturezas_juridicas
 from transform_cnae import transform_cnae
 from export_to_parquet import exportar_para_parquet
 
+# Registro do início do pipeline
+inicio_pipeline = datetime.now()
+
 # Diretório do projeto
 dir_atual = os.path.dirname(os.path.abspath(__file__))
 
 # Diretórios locais para salvar os dados
 estab_dir = os.path.join(dir_atual, 'Dados CNPJ Estab')
 empresas_dir = os.path.join(dir_atual, 'Dados CNPJ Empresas')
+cnae_dir = os.path.join(dir_atual, 'Dados CNAE')
+natureza_dir = os.path.join(dir_atual, 'Dados Natureza Jurídica')
 ctf_dir = os.path.join(dir_atual, 'Dados CTF IBAMA')
 output_dir = os.path.join(dir_atual, 'Entrada do Painel')
 parquet_dir = os.path.join(dir_atual, 'Dados Painel Parquet')
@@ -121,6 +127,9 @@ estab_urls = get_latest_cnpj_urls(base_cnpj_url, tipo_arquivo='Estabelecimentos'
 get_files_online(estab_urls, estab_dir)
 transform_estab(estab_dir, output_dir)
 
+# Captura a data de atualização da Receita Federal (Estabelecimentos)
+data_receita_estab = datetime.today().strftime("%Y-%m-%d")
+
 # --------------------------------------------------------------------------
 # PARTE 2 - DADOS DE EMPRESAS (MATRIZ)
 # --------------------------------------------------------------------------
@@ -146,18 +155,21 @@ ctf_urls = [f"{url_base_ctf}{uf}/pessoasJuridicas.csv" for uf in estados]
 get_files_online(ctf_urls, ctf_dir)
 transform_ctf(ctf_dir, output_dir)
 
+# Captura a data de atualização do IBAMA (CTF)
+data_ibama_ctf = datetime.today().strftime("%Y-%m-%d")
+
 # --------------------------------------------------------------------------
 # PARTE 4 - DADOS DE NATUREZA JURÍDICA
 # --------------------------------------------------------------------------
 print("\n===== PARTE 4: NATUREZAS JURÍDICAS (CNPJ) =====")
 naturezas_urls = get_latest_cnpj_urls(base_cnpj_url, tipo_arquivo='Naturezas')
-get_files_online(naturezas_urls, estab_dir)
+get_files_online(naturezas_urls, natureza_dir)
 
 # Localizar dinamicamente o arquivo NATJUCSV extraído
 arquivo_natureza_csv = None
-for arquivo in os.listdir(estab_dir):
+for arquivo in os.listdir(natureza_dir):
     if arquivo.upper().endswith('NATJUCSV'):
-        arquivo_natureza_csv = os.path.join(estab_dir, arquivo)
+        arquivo_natureza_csv = os.path.join(natureza_dir, arquivo)
         break
 
 if arquivo_natureza_csv:
@@ -171,11 +183,11 @@ else:
 # --------------------------------------------------------------------------
 print("\n===== PARTE 5: CNAEs (Códigos e Descrições) =====")
 cnae_urls = get_latest_cnpj_urls(base_cnpj_url, tipo_arquivo='Cnaes')
-get_files_online(cnae_urls, estab_dir)
+get_files_online(cnae_urls, cnae_dir)
 
 # Localiza arquivo com "CNAECSV"
 # Usa diretamente o arquivo renomeado pelo get_files_online
-arquivo_cnae_csv = os.path.join(estab_dir, "cnaes_original.csv")
+arquivo_cnae_csv = os.path.join(cnae_dir, "cnaes_original.csv")
 if os.path.exists(arquivo_cnae_csv):
     print(f"🔄 Lendo CNAEs: {arquivo_cnae_csv}")
     transform_cnae(arquivo_cnae_csv, output_dir)
@@ -198,10 +210,70 @@ exportar_para_parquet(origem=output_dir, destino=pasta_parquet)
 print("\n✅ Exportação para Parquet concluída com sucesso!")
 
 # --------------------------------------------------------------------------
+# PARTE 7 - LIMPEZA DAS PASTAS INTERMEDIÁRIAS
+# --------------------------------------------------------------------------
+print("\n===== PARTE 7: LIMPEZA DAS PASTAS INTERMEDIÁRIAS =====")
+
+import shutil
+
+pastas_intermediarias = [estab_dir, empresas_dir, cnae_dir, natureza_dir, ctf_dir]
+
+for pasta in pastas_intermediarias:
+    if os.path.exists(pasta):
+        print(f"🧹 Limpando: {pasta}")
+        for item in os.listdir(pasta):
+            caminho_item = os.path.join(pasta, item)
+            try:
+                if os.path.isfile(caminho_item):
+                    os.remove(caminho_item)
+                elif os.path.isdir(caminho_item):
+                    shutil.rmtree(caminho_item)
+            except Exception as e:
+                print(f"⚠️ Erro ao remover {caminho_item}: {e}")
+
+print("✅ Pastas intermediárias limpas com sucesso.")
+
+# --------------------------------------------------------------------------
+# PARTE 8 - REGISTRO DE DATAS DE ATUALIZAÇÃO
+# --------------------------------------------------------------------------
+print("\n===== PARTE 8: REGISTRO DE DATAS DE ATUALIZAÇÃO =====")
+
+import pandas as pd
+
+# DataFrames separados por fonte
+df_data_receita = pd.DataFrame([
+    {"fonte": "Receita Federal - Estabelecimentos", "data_atualizacao": data_receita_estab},
+    {"fonte": "Receita Federal - Empresas (Matriz)", "data_atualizacao": data_receita_estab}
+])
+df_data_ibama = pd.DataFrame([
+    {"fonte": "IBAMA - CTF/APP", "data_atualizacao": data_ibama_ctf}
+])
+
+# Salva os arquivos CSV
+caminho_receita = os.path.join(output_dir, "data_receita.csv")
+caminho_ibama = os.path.join(output_dir, "data_ibama.csv")
+
+df_data_receita.to_csv(caminho_receita, index=False)
+df_data_ibama.to_csv(caminho_ibama, index=False)
+
+print(f"✅ Arquivo salvo: {caminho_receita}")
+print(f"✅ Arquivo salvo: {caminho_ibama}")
+
+# --------------------------------------------------------------------------
 # FINALIZAÇÃO
 # --------------------------------------------------------------------------
+fim_pipeline = datetime.now()
+duracao = fim_pipeline - inicio_pipeline
+
 print("\n===== PIPELINE COMPLETO! =====\n")
-print("📁 Arquivos gerados:")
+
+print(f"📅 Data dos dados da Receita Federal: {data_receita_estab}")
+print(f"📅 Data dos dados do IBAMA (CTF):     {data_ibama_ctf}")
+print(f"🕓 Início da execução:                {inicio_pipeline.strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"🕓 Fim da execução:                   {fim_pipeline.strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"⏱️  Duração total:                    {str(duracao)}")
+
+print("\n📁 Arquivos gerados:")
 
 print("\n🔹 Estabelecimentos (estabelecimentos.csv)")
 print(f"   - Local: {os.path.abspath(os.path.join(output_dir, 'estabelecimentos.csv'))}")
@@ -229,3 +301,4 @@ print(f"   - Local: {os.path.abspath(os.path.join(output_dir, 'cnaes.csv'))}")
 print("   - Colunas: cnae, desc_cnae.\n")
 
 input("\n ▶️ Pressione ENTER para fechar...")
+
